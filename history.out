@@ -1,0 +1,225 @@
+    1  lsblk -o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINTS
+    2  parted -s /dev/sdb mklabel gpt
+    3  parted -s /dev/sdb mkpart primary ext4 1MiB 100%
+    4  partprobe /dev/sdb
+    5  udevadm settle
+    6  mkfs.ext4 -L MEPHI_WEB /dev/sdb1
+    7  mkdir -p /mephi-web
+    8  cp -a /etc/fstab /root/mephi-backups/fstab
+    9  printf '\nLABEL=MEPHI_WEB /mephi-web ext4 defaults 0 2\n' >> /etc/fstab
+   10  systemctl daemon-reload
+   11  findmnt --verify --verbose
+   12  mount /mephi-web
+   13  findmnt /mephi-web
+   14  lsblk -f
+   15  groupadd developers
+   16  groupadd -g 4444 curators
+   17  useradd -m -u 5501 -g developers -s /bin/bash user1
+   18  useradd -m -u 5502 -g developers -s /bin/bash user2
+   19  useradd -m -u 5503 -g developers -s /bin/bash user3
+   20  useradd -m -g curators -s /bin/bash curator1
+   21  useradd -m -g curators -s /bin/bash curator2
+   22  mkdir -p /data/mephi-2026
+   23  chmod 755 /data
+   24  chown root:developers /data/mephi-2026
+   25  chmod 2770 /data/mephi-2026
+   26  setfacl -m   u::rwx,g::rwx,g:curators:r-x,m::rwx,o::---   /data/mephi-2026
+   27  setfacl -d -m   u::rwx,g::rwx,g:curators:r-x,m::rwx,o::---   /data/mephi-2026
+   28  for creator in user1 user2 user3; do
+   29    runuser -u "$creator" -- sh -c     'printf "Created by %s\n" "$1" > "/data/mephi-2026/$1.txt"'     sh "$creator"
+   30  done
+   31  for editor in user1 user2 user3; do
+   32    for creator in user1 user2 user3; do
+   33      runuser -u "$editor" -- sh -c       'printf "Edited by %s\n" "$1" >> "/data/mephi-2026/$2.txt"'       sh "$editor" "$creator"
+   34    done
+   35  done
+   36  for curator in curator1 curator2; do
+   37    runuser -u "$curator" -- cat /data/mephi-2026/user1.txt
+   38    if runuser -u "$curator" -- sh -c     'echo forbidden >> /data/mephi-2026/user1.txt'; then
+   39      echo "ERROR: curator can write"
+   40    else
+   41      echo "OK: curator cannot write"
+   42    fi
+   43  done
+   44  if runuser -u nobody -- cat /data/mephi-2026/user1.txt; then
+   45    echo "ERROR: outsider can read"
+   46  else
+   47    echo "OK: outsider cannot read"
+   48  fi
+   49  getfacl /data/mephi-2026
+   50  getfacl /data/mephi-2026/user1.txt
+   51  cp -a /etc/security/pwquality.conf /root/mephi-backups/pwquality.conf
+   52  cat >> /etc/security/pwquality.conf <<'EOF'
+   53  minlen = 12
+   54  dcredit = 0
+   55  ucredit = 0
+   56  lcredit = 0
+   57  ocredit = 0
+   58  enforcing = 1
+   59  enforce_for_root
+   60  EOF
+   61  grep -n 'pam_pwquality.so' /etc/pam.d/system-auth /etc/pam.d/passwd
+   62  cp -a /etc/login.defs /root/mephi-backups/login.defs
+   63  sed -i   's/^[[:space:]]*PASS_MAX_DAYS[[:space:]].*/PASS_MAX_DAYS   90/'   /etc/login.defs
+   64  grep '^PASS_MAX_DAYS' /etc/login.defs
+   65  passwd user1
+   66  passwd user1
+   67  passwd user1
+   68  passwd user2
+   69  passwd user3
+   70  passwd curator1
+   71  passwd curator2
+   72  passwd student
+   73  passwd root
+   74  for account in root student user1 user2 user3 curator1 curator2; do
+   75    chage -M 90 "$account"
+   76  done
+   77  chage -l user1
+   78  cp -a /etc/pam.d/login /root/mephi-backups/login
+   79  cat > /etc/security/mephi-console-access.conf <<'EOF'
+   80  - : (curators) : ALL
+   81  + : ALL : ALL
+   82  EOF
+   83  chmod 644 /etc/security/mephi-console-access.conf
+   84  sed -i   '1i account required pam_access.so accessfile=/etc/security/mephi-console-access.conf'   /etc/pam.d/login
+   85  restorecon -v /etc/pam.d/login /etc/security/mephi-console-access.conf
+   86  getenforce
+   87  cat /etc/selinux/config
+   88  TCPDUMP=$(readlink -f "$(command -v tcpdump)")
+   89  printf '%s\n' "$TCPDUMP"
+   90  ls -l "$TCPDUMP"
+   91  chmod u-s "$TCPDUMP"
+   92  setcap cap_net_raw,cap_net_admin=ep "$TCPDUMP"
+   93  getcap "$TCPDUMP"
+   94  timeout 10s runuser -u user1 --   "$TCPDUMP" -i lo -nn -c 2 icmp   > /root/tcpdump-test.out 2>&1 &
+   95  CAPTURE_PID=$!
+   96  sleep 1
+   97  ping -c 2 127.0.0.1 > /dev/null
+   98  wait "$CAPTURE_PID"
+   99  cat /root/tcpdump-test.out
+  100  ping -c 2 127.0.0.1
+  101  findmnt /mephi-web
+  102  printf 'Hello from Student: 372444\n' > /mephi-web/index.html
+  103  chown root:root /mephi-web /mephi-web/index.html
+  104  chmod 755 /mephi-web
+  105  chmod 644 /mephi-web/index.html
+  106  semanage fcontext -a -t httpd_sys_content_t '/mephi-web(/.*)?'
+  107  restorecon -Rv /mephi-web
+  108  cp -a /etc/nginx/nginx.conf /root/mephi-backups/nginx.conf
+  109  cat > /etc/nginx/nginx.conf <<'EOF'
+  110  user nginx;
+  111  worker_processes auto;
+  112  error_log /var/log/nginx/error.log;
+  113  pid /run/nginx.pid;
+  114  events {
+  115      worker_connections 1024;
+  116  }
+  117  http {
+  118      include /etc/nginx/mime.types;
+  119      default_type application/octet-stream;
+  120      access_log /var/log/nginx/access.log;
+  121      sendfile on;
+  122      server {
+  123          listen 80 default_server;
+  124          server_name mephi-2026.domain.local localhost;
+  125          root /mephi-web;
+  126          index index.html;
+  127          location / {
+  128              try_files $uri $uri/ =404;
+  129          }
+  130      }
+  131  }
+  132  EOF
+  133  mkdir -p /etc/systemd/system/nginx.service.d
+  134  cat > /etc/systemd/system/nginx.service.d/mephi-storage.conf <<'EOF'
+  135  [Unit]
+  136  RequiresMountsFor=/mephi-web
+  137  EOF
+  138  systemctl daemon-reload
+  139  nginx -t
+  140  systemctl enable --now nginx
+  141  systemctl restart nginx
+  142  firewall-cmd --permanent --add-service=http
+  143  firewall-cmd --reload
+  144  systemctl is-enabled nginx
+  145  systemctl is-active nginx
+  146  ls -ldZ /mephi-web
+  147  ls -lZ /mephi-web/index.html
+  148  curl --fail --silent --show-error http://localhost/
+  149  history -a
+  150  cat >> /root/.bashrc <<'EOF'
+  151  HISTSIZE=50000
+  152  HISTFILESIZE=100000
+  153  HISTCONTROL=
+  154  HISTIGNORE=
+  155  shopt -s histappend
+  156  shopt -s cmdhist
+  157  shopt -s lithist
+  158  PROMT_COMMAND='history -a'
+  159  EOF
+  160  source /root/.bashrc
+  161  mkdir -p /root/mephi-backups
+  162  chmod 700 /root/mephi-backups
+  163  systemctl set-default multi-user.target
+  164  hostnamectl set-hostname mephi-2026.domain.local
+  165  nmcli device status
+  166  nmcli connection show
+  167  IFACE=$(nmcli -t -f DEVICE,TYPE device status | awk -F: '$2=="ethernet" {print $1; exit}')
+  168  printf 'Interface %s\n' "$IFACE"
+  169  nmcli device connect "$IFACE"
+  170  CON=$(nmcli -g GENERAL.CONNECTION device show "$IFACE")
+  171  printf 'Connection: %s\n' "$CON"
+  172  nmcli connection modify "$CON" connection.autoconnect yes ipv4.method auto ipv4.addresses "" ipv4.gateway "" ipv4.dns "" ipv4.ignore-auto-dns no
+  173  nmcli connection up "$CON"
+  174  hostnamectl --static
+  175  ip -4 address show "$IFACE"
+  176  ip route
+  177  ping -c 4 8.8.8.8 > /root/ping.out
+  178  cat /root/ping.out
+  179  ping -c 4 8.8.8.8 > /root/ping.out
+  180  cat /root/ping.out
+  181  dnf upgrade --refresh -y
+  182  dnf install -y nginx libcap-ng-utils libcap acl parted e2fsprogs policycoreutils-python-utils selinux-policy-targeted libpwquality curl sudo openssh-server firewalld dnf-plugins-core
+  183  mkdir -p /tmp/mephi-rpm
+  184  dnf download --resolve --destdir /tmp/mephi-rpm tcpdump
+  185  cp /tmp/mephi-rpm/tcpdump-*.rpm /tmp/
+  186  rpm -Uvh /tmp/mephi-rpm/*.rpm
+  187  rpm -q tcpdump
+  188  dnf history > /root/dnf.out
+  189  systemctl enable --now sshd
+  190  systemctl enable --now firewalld
+  191  firewall-cmd --permanent --add-service=ssh
+  192  firewall-cmd --reload
+  193  su user1
+  194  su - user1
+  195  reboot
+  196  sudo -u user1 tcpdump -i lo -nn -c 4 icmp 2>&1 | tee /root/tcpdump-test.out
+  197  hostnamectl --static
+  198  findmnt /mephi-web
+  199  systemctl is-enabled nginx
+  200  systemctl is-active nginx
+  201  getenforce
+  202  getcap "$(readlink -f "$(command -v tcpdump)")"
+  203  getfacl /data/mephi-2026
+  204  chage -l user1
+  205  curl --fail --silent --show-error http://localhost/
+  206  mkdir -p /root/mephi-session-project-2026
+  207  OUT=/root/mephi-session-project-2026
+  208  ping -c 4 8.8.8.8 > "$OUT/ping.out"
+  209  cat $OUT/ping.out
+  210  ping -c 4 8.8.8.8 > "$OUT/ping.out"
+  211  cat $OUT/ping.out
+  212  stat /data/mephi-2026 > "$OUT/stat.out"
+  213  stat /mephi-web >> "$OUT/stat.out"
+  214  getcap "$(readlink -f "$(command -v tcpdump)")" > "$OUT/getcap.out"
+  215  dnf history > "$OUT/dnf.out"
+  216  journalctl -u nginx -b --no-pager > "$OUT/journalctl.out"
+  217  getenforce > "$OUT/getenforce.out"
+  218  curl --fail --silent --show-error http://localhost/ > "$OUT/curl.out"
+  219  cp /etc/fstab "$OUT/fstab"
+  220  cp /etc/passwd "$OUT/passwd"
+  221  cp /etc/group "$OUT/group"\
+  222  cp /etc/security/pwquality.conf "$OUT/pwquality.conf"
+  223  cp /etc/shadow "$OUT/shadow"
+  224  history -a
+  225  history > /root/history.out

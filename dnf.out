@@ -1,0 +1,5 @@
+ID     | Command line                                    | Date and time    | Action(s)      | Altered
+------------------------------------------------------------------------------------------------------
+     3 | install -y nginx libcap-ng-utils libcap acl par | 2026-10-04 15:24 | Install        |   17   
+     2 | upgrade --refresh -y                            | 2026-10-04 15:19 | I, O, U        |  113 E<
+     1 |                                                 | 2026-10-04 14:50 | Install        |  558 >E
